@@ -1,0 +1,305 @@
+esphome:
+  name: m5stack
+  friendly_name: M5
+
+time: # Use SNTP to get the network time
+  - platform: homeassistant
+    id: homeassistant_time
+  - platform: sntp
+    id: sntp_time
+
+mqtt: # Home assistant MQTT server
+  discovery: true
+  broker: homeassistant.local
+  port: 1883
+  username: ""
+  password: ""
+  id: mqtt_client
+  on_connect:
+    - logger.log: MQTT is connected!
+  on_disconnect:
+    - logger.log: MQTT is disconnected...
+
+esp32: # This M5STACK board
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: ""
+
+ota:
+- platform: esphome
+  password: ""
+
+
+wifi: # my wifi
+  ssid: "***********"
+  password: "*************"
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "M5 Fallback Hotspot"
+    password: "*************"
+
+captive_portal:
+        
+spi:
+  clk_pin: 18
+  mosi_pin: 23
+  miso_pin: 19
+
+i2c:
+  - id: i2c_internal
+    sda: 21
+    scl: 22
+    scan: true
+  - id: i2c_external
+    sda: 0
+    scl: 26
+    scan: true
+
+color: # set up the colour scheme
+  - id: my_red
+    red: 100%
+    green: 3%
+    blue: 5%
+
+  - id: my_blue
+    red: 0%
+    green: 0%
+    blue: 100%
+
+  - id: my_green
+    red: 0%
+    green: 100%
+    blue: 0%
+
+  - id: my_yellow
+    red: 100%
+    green: 100%
+    blue: 0%
+
+font: # Needs some fonts
+  - file: "arial.ttf"
+    id: arialfont20
+    size: 20
+
+  - file: "arial.ttf"
+    id: arialfont
+    size: 15
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: M5 IP Address
+      id: M5_ip
+    ssid:
+      name: M5 SSID
+      id: M5_SSID
+    mac_address:
+      name: M5 Mac Address
+      id: M5_MAC
+ 
+
+sensor:
+  - platform: mqtt_subscribe # Outside Temp measured on 
+    topic: "wroom/sensor/outside_temperature/state"
+    id: outside_temp
+    unit_of_measurement: "C"
+
+  - platform: mqtt_subscribe # Outside Temp measured on 
+    topic: "wroom/sensor/office_temperature_1/state"
+    id: office_temp_1
+    unit_of_measurement: "C"
+
+  - platform: mqtt_subscribe # Outside Temp measured on 
+    topic: "wroom/sensor/office_humidity_1/state"
+    id: office_humid_1
+    unit_of_measurement: "%"
+
+  - platform: mqtt_subscribe # Amount of energy the house is using from the grid
+    topic: "GivEnergy/SA2245G171/Power/Power/Import_Power"
+    id: givengery_grid
+    unit_of_measurement: "w"
+
+  - platform: mqtt_subscribe # Amount of Power going to the grid
+    topic: GivEnergy/SA2245G171/Power/Power/Export_Power
+    id: givengery_export
+
+  - platform: mqtt_subscribe # Amount left in the Battery
+    topic: GivEnergy/SA2245G171/Power/Power/SOC
+    id: battery_soc
+    unit_of_measurement: "%"
+
+  - platform: mqtt_subscribe # PV POwer
+    topic: GivEnergy/SA2245G171/Power/Power/PV_Power
+    id: giv_pvpower
+    unit_of_measurement: "w"
+
+  - platform: mqtt_subscribe # Load
+    topic: GivEnergy/SA2245G171/Power/Power/Load_Power
+    id: giv_load
+    unit_of_measurement: "w"
+
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: wifi_signal_db
+    name: "WiFi Signal Percent"
+    id: wifi_percent
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "Signal %"
+    entity_category: "diagnostic"
+    device_class: ""
+
+  - platform: uptime
+    name: M5 Uptime
+    update_interval: 1s
+    id: M5_Uptime
+
+graph:
+  # Show multi-trace graph
+  - id: multi_temperature_graph
+    duration: 1h
+    x_grid: 10min
+    y_grid: 1.0     # degC/div
+    width: 320
+    height: 220
+    traces:
+      - sensor: outside_temp
+        line_type: DASHED
+        line_thickness: 2
+        color: my_red
+      - sensor: office_temp_1
+        line_type: SOLID
+        continuous: true
+        line_thickness: 3
+        color: my_blue
+  
+display: # Took a while to get this right for M5Stack Core Gen 1 v2.61
+  - platform: ili9xxx
+    id: m5stack_display
+    model: M5STACK
+    cs_pin: 14
+    dc_pin: 27
+    reset_pin: 33
+    invert_colors: true
+    update_interval: 1s
+    pages: 
+      - id: page1
+        lambda: |-
+          it.rectangle(0,00, it.get_width(),30,id(my_blue));
+          it.strftime(3, 5, id(arialfont), "Date :%d-%m-%Y", id(homeassistant_time).now());
+          it.strftime(210, 5, id(arialfont), "Time:%H:%M:%S", id(homeassistant_time).now());
+          it.printf(150,5,id(arialfont),"%.0f",id(wifi_percent).state);
+          
+          it.printf(3, 40, id(arialfont20),my_blue, "Import Power:");
+          it.printf(210, 40, id(arialfont20),my_blue, "%.0f",id(givengery_grid).state);
+
+          it.printf(3, 80, id(arialfont20),my_green, "Battery:");
+          it.printf(210, 80, id(arialfont20),my_green, "%.0f%%",id(battery_soc).state);
+       
+          it.printf(3, 120, id(arialfont20), my_red, "Export:");
+          it.printf(210, 120, id(arialfont20), my_red, "%.0f%",id(givengery_export).state);
+
+          it.printf(3, 160, id(arialfont20), my_yellow, "PV Power:");
+          it.printf(210, 160, id(arialfont20),my_yellow, "%.0f%",id(giv_pvpower).state);
+
+          it.printf(3, 200, id(arialfont20), "Load:");
+          it.printf(210, 200, id(arialfont20), "%.0f%",id(giv_load).state);
+      - id: page2
+        lambda: |-
+          it.rectangle(0,00, it.get_width(),30,id(my_blue));
+          it.strftime(3, 5, id(arialfont), "Date :%d-%m-%Y", id(homeassistant_time).now());
+          it.strftime(210, 5, id(arialfont), "Time:%H:%M:%S", id(homeassistant_time).now());
+          it.printf(150,5,id(arialfont),"%.0f",id(wifi_percent).state);
+
+          it.printf(3, 40, id(arialfont20),my_blue, "IP:");
+          it.printf(110, 40, id(arialfont20),my_blue, "%s",id(M5_ip).state.c_str());
+          
+          it.printf(3, 80, id(arialfont20),my_green, "SSID:");
+          it.printf(110, 80, id(arialfont20),my_green, "%s",id(M5_SSID).state.c_str());
+       
+          it.printf(3, 120, id(arialfont20), my_red, "MAC:");
+          it.printf(110, 120, id(arialfont20), my_red, "%s",id(M5_MAC).state.c_str());
+
+          it.printf(3, 160, id(arialfont20), my_yellow, "Signal:");
+          it.printf(110,160,id(arialfont20),my_yellow, "%.0f",id(wifi_percent).state);
+
+          it.printf(3, 200, id(arialfont20), "Up time:");
+          it.printf(110,200,id(arialfont20),"%.0f",id(M5_Uptime).state);
+
+          
+      - id: page3
+        lambda: |-
+          it.rectangle(0,00, it.get_width(),30,id(my_blue));
+          it.strftime(3, 5, id(arialfont), "Date :%d-%m-%Y", id(homeassistant_time).now());
+          it.strftime(210, 5, id(arialfont), "Time:%H:%M:%S", id(homeassistant_time).now());
+          it.printf(150,5,id(arialfont),"%.0f",id(wifi_percent).state);
+
+          it.printf(3, 40, id(arialfont20),my_blue, "Outside:");
+          it.printf(210, 40, id(arialfont20),my_blue, "%.1f C",id(outside_temp).state);
+
+          it.printf(3, 80, id(arialfont20),my_green, "Office temp:");
+          it.printf(210, 80, id(arialfont20),my_green, "%0.1f C",id(office_temp_1).state);
+
+          it.printf(3, 120, id(arialfont20), my_red, "Office Humid:");
+          it.printf(210, 120, id(arialfont20), my_red, "%0.1f %%",id(office_humid_1).state);
+
+      - id: page4
+        lambda: |-
+          // Draw the graph at position [x=0,y=0]
+          it.graph(0, 0, id(multi_temperature_graph), my_yellow);
+  
+binary_sensor:
+  - platform: gpio
+    id: M5_BtnA
+    pin:
+      number: 39
+      inverted: True
+    on_click:
+      then:
+        - display.page.show_previous: m5stack_display
+        - component.update: m5stack_display
+
+  - platform: gpio
+    id: M5_BtnB
+    pin:
+      number: 38
+      inverted: True
+    on_click:
+      then:
+        - switch.toggle: backlight
+
+  - platform: gpio
+    id: M5_BtnC
+    pin:
+      number: 37
+      inverted: True
+    on_click:
+      then:
+        - display.page.show_next: m5stack_display
+        - component.update: m5stack_display
+
+  - platform: status
+    id: connection_status
+
+ 
+# GPIO pin of the display backlight
+switch:
+  - platform: gpio
+    pin: 32
+    name: "Backlight"
+    id: backlight
+    restore_mode: RESTORE_DEFAULT_ON
