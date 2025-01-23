@@ -10,3 +10,5 @@ Page 4 - Temperature graph
 
 The data is mostly from MQTT from other sensors
 The Header is currently missing from the graph as I wanted more screen space.
+
+The left and right buttons move though the pages and the middle button toggles the backlight
